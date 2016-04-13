@@ -1,11 +1,9 @@
+
 import re
 import sys
 import codecs
 import json
 import time
-
-# reload(sys)
-# sys.setdefaultencoding('utf-8')
 
 class SmoothingModel:
 
@@ -13,17 +11,34 @@ class SmoothingModel:
         self.tmap = tmap
         self.emap = emap
         self.list = sentence_list
+        self.singtt = {}
+        self.singtw = {}
         self.ct = {}
         self.cw = {}
         self.tagDict = {}
 
-    def genDic(self):
+    def genSingTT(self):
+        for k1 in self.tmap.keys():
+            count = 0
+            for k2 in self.tmap[k1].keys():
+                if self.tmap[k1][k2] == 1:
+                    count += 1
+            self.singtt[k1] = count
+
+    def genSingTW(self):
+        for k1 in self.emap.keys():
+            count = 0
+            for k2 in self.emap[k1].keys():
+                if self.emap[k1][k2] == 1:
+                    count += 1
+            self.singtw[k1] = count
+
+    def backOff(self):
         for sentence in self.list:
             tokens = sentence.split()
             for i in range(len(tokens)):
                 word = tokens[i].rsplit('/',1)[0]
                 tag = tokens[i].rsplit('/',1)[1]
-
                 if tag in self.ct:
                     self.ct[tag] += 1
                 else:
@@ -38,15 +53,6 @@ class SmoothingModel:
                     self.tagDict[word] = {}
                     self.tagDict[word][tag] = 1
         self.ct['END'] = len(self.list)
-
-    def fillTagDic(self,tmap):
-        for tag1 in self.tmap.keys():
-            for tag2 in self.ct.keys():
-                if tag2 == 'START':
-                    continue
-                elif tag2 not in tmap[tag1]:
-                    tmap[tag1][tag2] = 0
-
 
 class HMMModel:
 
@@ -120,7 +126,6 @@ class HMMModel:
                         self.emap[last_tag][last_word] = 1
 
 
-
 if __name__=="__main__":
    start = time.clock()
    training_data = sys.argv[1]
@@ -131,8 +136,9 @@ if __name__=="__main__":
    model = HMMModel(sentence_list)
    model.train()
    smoothingmodel = SmoothingModel(model.tmap,model.emap,sentence_list)
-   smoothingmodel.genDic()
-   smoothingmodel.fillTagDic(model.tmap)
+   smoothingmodel.genSingTT()
+   smoothingmodel.genSingTW()
+   smoothingmodel.backOff()
 
    for k1,v1 in model.tmap.items():
         count = 0
@@ -149,16 +155,18 @@ if __name__=="__main__":
             v1[k2] = str(str(v2)+"/"+str(count))
 
 
-
    with open('hmmmodel.txt', 'w') as f:
        f.write(str(model.tmap))
        f.write("\n")
        f.write(str(model.emap))
+       f.write("\n")
+       f.write(str(smoothingmodel.singtt))
+       f.write("\n")
+       f.write(str(smoothingmodel.singtw))
        f.write("\n")
        f.write(str(smoothingmodel.ct))
        f.write("\n")
        f.write(str(smoothingmodel.cw))
        f.write("\n")
        f.write(str(smoothingmodel.tagDict))
-
    f.close()

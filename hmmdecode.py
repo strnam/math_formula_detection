@@ -1,55 +1,86 @@
+
 import sys
 import math
 import json
 import time
 
-# reload(sys)
-# sys.setdefaultencoding('utf-8')
 
 class Model:
       def __init__(self,file):
         self.file = file
         self.tmap = {}
         self.emap = {}
+        self.singtt = {}
+        self.singtw = {}
         self.ct = {}
         self.cw = {}
-        self.lenT = {}
-        self.lenE = {}
+        self.ptt = {}
+        self.ptw = {}
+        self.n = 0
+        self.V = 0
+        self.pbackoffw = 0
+
 
       def retrieveModel(self):
           with open(self.file, 'r') as input:
               list_maps = input.read().split("\n")
               self.tmap = eval(list_maps[0])
               self.emap = eval(list_maps[1])
-              self.ct = eval(list_maps[2])
-              self.cw = eval(list_maps[3])
-              self.tagDict = eval(list_maps[4])
+              self.singtt = eval(list_maps[2])
+              self.singtw = eval(list_maps[3])
+              self.ct = eval(list_maps[4])
+              self.cw = eval(list_maps[5])
+              self.tagDict = eval(list_maps[6])
 
+          for v in self.cw.itervalues():
+            self.n += v
+          self.V = len(self.cw.keys())
 
-          for k1 in self.tmap.keys():
-              if k1 in self.lenT:
-                  self.lenT[k1] += float(self.tmap[k1][self.tmap[k1].keys()[0]].split('/')[1])
-              else:
-                  self.lenT[k1] = float(self.tmap[k1][self.tmap[k1].keys()[0]].split('/')[1])
+          for t in self.ct.keys():
+              self.ptt[t] = float(self.ct[t])/float(self.n)
+          for w in self.cw.keys():
+              self.ptw[w] = float(self.cw[w] + 1)/float(self.n + self.V)
 
-          for k1 in self.emap.keys():
-              if k1 in self.lenE:
-                  self.lenE[k1] += float(self.emap[k1][self.emap[k1].keys()[0]].split('/')[1])
-              else:
-                  self.lenE[k1] = float(self.emap[k1][self.emap[k1].keys()[0]].split('/')[1])
 
           for k1 in self.tmap.keys():
               for k2 in self.tmap[k1].keys():
                   n,d = self.tmap[k1][k2].split('/')
-                  self.tmap[k1][k2] = (float(n))
-
+                  self.tmap[k1][k2] = (float(n)/float(d))
+                  #self.tmap[k1][k2] = self.smoothing('T',k1,k2,n,d)
 
           for k1 in self.emap.keys():
               for k2 in self.emap[k1].keys():
                   n,d = self.emap[k1][k2].split('/')
-                  self.emap[k1][k2] = (float(n))
+                  self.emap[k1][k2] = (float(n)+1/float(d))
+                  #self.emap[k1][k2] = self.smoothing('E',k1,k2,n,d)
+                  #print 2
+
+          self.pbackoffw = float(1)/float(self.n + self.V)
 
 
+      def smoothing(self,type,k1,k2,num,denom):
+          lda = 1
+          if type == 'T':
+              if k1 in self.singtt:
+                  lda += self.singtt[k1]
+              val = float(float(num) + lda*self.ptt[k2])/float(float(denom) + lda)
+
+          elif type == 'E':
+              if k1 in self.singtw:
+                  lda += self.singtw[k1]
+              val = float(float(num) + lda*self.ptw[k2])/float(float(denom) + lda)
+
+          elif type == 'MW':
+              if k1 in self.singtw:
+                  lda += self.singtw[k1]
+              val = float(float(num) + lda * self.pbackoffw)/float(float(denom) + lda)
+
+          elif type == 'MT':
+              if k1 in self.singtt:
+                  lda += self.singtt[k1]
+              val = float(float(num) + lda * self.ptt[k2])/float(float(denom) + lda)
+
+          return (val)
 
 class Decoder:
 
@@ -74,19 +105,13 @@ class Decoder:
              self.otagList = self.tmap.keys()
              self.otagList.remove('START')
          for k in self.otagList:
+             if k in self.tmap['START']:
                  self.viterbi[k] = {}
                  self.backpointer[k] = {}
                  if tokens[0] in self.emap[k]:
-                     if self.tmap['START'][k] != 0:
-                        self.viterbi[k][0] = float(self.tmap['START'][k])/float(model.lenT['START']) * \
-                                          float(self.emap[k][tokens[0]])/float(model.lenE[k])
-                     else:
-                         self.viterbi[k][0] = 0.00004 * float(self.emap[k][tokens[0]])/float(model.lenE[k])
+                     self.viterbi[k][0] = self.tmap['START'][k] * self.emap[k][tokens[0]]
                  else:
-                     if self.tmap['START'][k] != 0:
-                        self.viterbi[k][0] = float(self.tmap['START'][k])/float(model.lenT['START'])
-                     else:
-                        self.viterbi[k][0] = 0.00004
+                     self.viterbi[k][0] = self.tmap['START'][k] * model.smoothing('MW',k,tokens[0],0,model.ct[k])
 
                  self.backpointer[k] = {}
                  self.backpointer[k][0] = 'START'
@@ -97,61 +122,51 @@ class Decoder:
              else:
                  self.otagList = self.tmap.keys()
                  self.otagList.remove('START')
-
              for k1 in self.otagList:
-                 maxVal = 0.0
+
+                 maxVal = 0
                  if tokens[i-1] in model.tagDict:
                      self.itagList = model.tagDict[tokens[i-1]].keys()
                  else:
                      self.itagList = self.tmap.keys()
                      self.itagList.remove('START')
                  for k2 in self.itagList:
-                        if tokens[i] in self.emap[k1]:
-                            if self.tmap[k2][k1] != 0:
-                               curr_val = self.viterbi[k2][i-1] * \
-                                          float(self.tmap[k2][k1])/float(model.lenT[k2])* \
-                                          float(self.emap[k1][tokens[i]])/float(model.lenE[k1])
-                            else:
-                                curr_val = self.viterbi[k2][i-1] * \
-                                           0.00004 *\
-                                           float(self.emap[k1][tokens[i]])/float(model.lenE[k1])
+                     if k1 in self.tmap[k2]:
+                        if tokens[i] in self.emap[k1] and k2 in self.viterbi and i-1 in self.viterbi[k2]:
+                           maxVal = max(maxVal,self.viterbi[k2][i-1]*self.tmap[k2][k1]*self.emap[k1][tokens[i]])
+                        elif k2 in self.viterbi and i-1 in self.viterbi[k2]:
+                           maxVal = max(maxVal,self.viterbi[k2][i-1] * self.tmap[k2][k1] * model.smoothing('MW',k1,tokens[i],0,model.ct[k1]))
 
-                            if curr_val >= maxVal:
-                               maxVal = curr_val
-
-                        else:
-                            if self.tmap[k2][k1] != 0:
-                               curr_val = self.viterbi[k2][i-1] * \
-                                            float(self.tmap[k2][k1])/float(model.lenT[k2])
-                            else:
-                               curr_val = self.viterbi[k2][i-1] * \
-                                            0.00004
-                            if curr_val >= maxVal:
-                               maxVal = curr_val
+                     else:
+                         if tokens[i] in self.emap[k1] and k2 in self.viterbi and i-1 in self.viterbi[k2]:
+                           maxVal = max(maxVal,self.viterbi[k2][i-1]*model.smoothing('MT',k2,k1,0,model.ct[k2])*self.emap[k1][tokens[i]])
+                         elif k2 in self.viterbi and i-1 in self.viterbi[k2]:
+                           maxVal = max(maxVal,self.viterbi[k2][i-1] * model.smoothing('MT',k2,k1,0,model.ct[k2]) * model.smoothing('MW',k1,tokens[i],0,model.ct[k1]))
 
 
                  if k1 in self.viterbi:
                    self.viterbi[k1][i] = maxVal
-
                  else:
                    self.viterbi[k1] = {}
                    self.viterbi[k1][i] = maxVal
 
-                 if self.viterbi[k1][i] == 0.0:
-                       self.viterbi[k1][i] = 0.1
 
-                 maxVal = 0.0
+                 maxVal = 0
                  argMax = ''
                  for k2 in self.itagList:
-                           if self.tmap[k2][k1] != 0:
-                               curr_val = self.viterbi[k2][i-1] * \
-                                          float(self.tmap[k2][k1])/float(model.lenT[k2])
-                           else:
-                               curr_val = self.viterbi[k2][i-1] * \
-                                          0.00004
+                    if k1 in self.tmap[k2]:
+                        if k2 in self.viterbi and i-1 in self.viterbi[k2]:
+                           curr_val = self.viterbi[k2][i-1]*self.tmap[k2][k1]
                            if maxVal <= curr_val:
                               maxVal = curr_val
                               argMax = k2
+                    else:
+                        if k2 in self.viterbi and i-1 in self.viterbi[k2]:
+                           curr_val = self.viterbi[k2][i-1]*model.smoothing('MT',k2,k1,0,model.ct[k2])
+                           if maxVal <= curr_val:
+                              maxVal = curr_val
+                              argMax = k2
+
 
                  if k1 in self.backpointer:
                     self.backpointer[k1][i] = argMax
@@ -160,7 +175,7 @@ class Decoder:
                     self.backpointer[k1][i] = argMax
 
 
-         maxVal = 0.0
+         maxVal = 0
          argMax = ''
          if tokens[len(tokens)-1] in model.tagDict:
              self.otagList = model.tagDict[tokens[len(tokens)-1]].keys()
@@ -168,13 +183,13 @@ class Decoder:
              self.otagList = self.tmap.keys()
              self.otagList.remove('START')
          for k1 in self.otagList:
-                 if self.tmap[k1]['END'] !=0 :
-                     curr_val = self.viterbi[k1][len(tokens)-1] * \
-                                 float(self.tmap[k1]['END'])/float(model.lenT[k1])
-                                #self.tmap[k1]['END']
-                 else:
-                     curr_val = self.viterbi[k1][len(tokens)-1] * \
-                                 0.00004
+             if 'END' in self.tmap[k1]:
+                 curr_val = self.viterbi[k1][len(tokens)-1]*self.tmap[k1]['END']
+                 if maxVal <= curr_val:
+                      maxVal = curr_val
+                      argMax = k1
+             else:
+                 curr_val = self.viterbi[k1][len(tokens)-1]*model.smoothing('MT',k1,'END',0,model.ct[k1])
                  if maxVal <= curr_val:
                       maxVal = curr_val
                       argMax = k1
