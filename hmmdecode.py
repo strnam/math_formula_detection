@@ -98,6 +98,7 @@ class Decoder:
 
 
      def decode(self):
+         model = self.model
          tokens = self.sentence.split()
          if tokens[0] in model.tagDict:
              self.otagList = model.tagDict[tokens[0]].keys()
@@ -167,7 +168,6 @@ class Decoder:
                               maxVal = curr_val
                               argMax = k2
 
-
                  if k1 in self.backpointer:
                     self.backpointer[k1][i] = argMax
                  else:
@@ -209,8 +209,10 @@ class Decoder:
          prevTag = tag
          for i in range(len(tokens)-1, -1, -1):
             currTag = self.backpointer[prevTag][i]
+
             self.tags.append(currTag)
             prevTag = currTag
+
 
          self.tags.reverse()
 

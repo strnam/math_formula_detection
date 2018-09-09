@@ -66,7 +66,7 @@ class HMMModel:
         self.emap = {}
 
     def train(self):
-        for sentence in sentence_list:
+        for sentence in self.list:
             tokens = sentence.split()
             for i in range(len(tokens)-1):
                 word = tokens[i].rsplit('/',1)[0]
@@ -133,6 +133,7 @@ if __name__=="__main__":
    with open(training_data, 'r') as input:
        for line in input:
            sentence_list.append(line)
+
    model = HMMModel(sentence_list)
    model.train()
    smoothingmodel = SmoothingModel(model.tmap,model.emap,sentence_list)
